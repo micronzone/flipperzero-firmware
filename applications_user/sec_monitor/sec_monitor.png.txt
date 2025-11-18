@@ -1,0 +1,34 @@
+ICON PLACEHOLDER
+
+This file needs to be replaced with a 10x10 pixel, 1-bit PNG image.
+
+To create the icon:
+
+1. Using ImageMagick:
+   convert -size 10x10 xc:white -fill black \
+     -draw "rectangle 1,1 8,8" \
+     -draw "fill white -draw circle 4,4 4,5" \
+     -depth 1 sec_monitor.png
+
+2. Using GIMP:
+   - Create new 10x10 image
+   - Mode: Grayscale, 1-bit
+   - Draw a simple security/eye icon
+   - Export as PNG
+
+3. Using online tool:
+   - Visit: https://www.pixilart.com/
+   - Create 10x10 grid
+   - Draw simple icon
+   - Export as PNG
+
+Icon Design Suggestion (ASCII art):
+```
+  ██████
+ █      █
+ █  ●   █
+ █      █
+  ██████
+```
+
+This represents a security camera or monitoring eye.

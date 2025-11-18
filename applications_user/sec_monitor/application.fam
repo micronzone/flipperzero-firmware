@@ -1,0 +1,14 @@
+App(
+    appid="sec_monitor",
+    name="Security Monitor",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="sec_monitor_app",
+    stack_size=4 * 1024,  # Increased for UART worker thread
+    fap_category="GPIO",
+    fap_icon="sec_monitor.png",
+    fap_description="PIR Security Monitor via UART (Bluefruit LE)",
+    fap_author="Professional Security System",
+    fap_version="7.0",
+    fap_icon_assets="assets",
+    requires=["gui"],
+)
