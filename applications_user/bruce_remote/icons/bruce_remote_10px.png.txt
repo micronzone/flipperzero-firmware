@@ -1,0 +1,5 @@
+# Icon Placeholder
+# Create a 10x10 PNG icon for bruce_remote app
+# Suggested design: B letter or antenna symbol
+# Use any image editor to create bruce_remote_10px.png
+# Place it in this directory and remove this .txt file

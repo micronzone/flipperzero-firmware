@@ -1,0 +1,15 @@
+App(
+    appid="bruce_remote",
+    name="Bruce Remote",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="bruce_remote_app",
+    requires=["gui"],
+    stack_size=4 * 1024,
+    order=22,
+    fap_icon="icons/bruce_remote_10px.png",
+    fap_category="GPIO",
+    fap_description="Control ESP32-C5 Bruce device via UART and display its screen",
+    fap_author="Flipper Zero Community",
+    fap_version="1.0",
+    fap_icon_assets="icons",
+)
