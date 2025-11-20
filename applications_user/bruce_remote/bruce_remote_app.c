@@ -11,7 +11,6 @@
 
 // Forward declarations
 static void bruce_remote_app_free(BruceRemoteApp* app);
-static bool bruce_remote_navigation_callback(void* context);
 
 // UART callback
 static void uart_rx_callback(uint8_t* data, size_t len, void* context) {
@@ -220,12 +219,6 @@ static void bruce_remote_app_free(BruceRemoteApp* app) {
     furi_mutex_free(app->mutex);
 
     free(app);
-}
-
-// Navigation callback
-static bool bruce_remote_navigation_callback(void* context) {
-    UNUSED(context);
-    return true;  // Allow back navigation
 }
 
 // App entry point
