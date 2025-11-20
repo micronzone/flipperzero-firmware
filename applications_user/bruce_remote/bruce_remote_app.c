@@ -9,6 +9,12 @@
 
 #define TAG "BruceRemote"
 
+// View model
+typedef struct {
+    DisplayParser* display_parser;
+    bool connected;
+} BruceRemoteViewModel;
+
 // Forward declarations
 static void bruce_remote_app_free(BruceRemoteApp* app);
 
@@ -21,22 +27,24 @@ static void uart_rx_callback(uint8_t* data, size_t len, void* context) {
 
     // Trigger view update
     if(app->remote_view) {
-        view_commit_model(app->remote_view, false);
+        with_view_model(
+            app->remote_view,
+            BruceRemoteViewModel * model,
+            { UNUSED(model); },
+            true);
     }
 }
 
 // Remote view draw callback
-static void remote_view_draw_callback(Canvas* canvas, void* model) {
-    BruceRemoteApp* app = (BruceRemoteApp*)model;
-
-    furi_mutex_acquire(app->mutex, FuriWaitForever);
+static void remote_view_draw_callback(Canvas* canvas, void* _model) {
+    BruceRemoteViewModel* model = _model;
 
     // Clear canvas
     canvas_clear(canvas);
 
-    if(app->connected) {
+    if(model->connected && model->display_parser) {
         // Render Bruce display
-        display_parser_render(app->display_parser, canvas);
+        display_parser_render(model->display_parser, canvas);
 
         // Show stats
         canvas_set_color(canvas, ColorBlack);
@@ -47,8 +55,8 @@ static void remote_view_draw_callback(Canvas* canvas, void* model) {
             stats,
             sizeof(stats),
             "RX:%lu/%lu",
-            app->display_parser->display_buffer->packets_received,
-            app->display_parser->display_buffer->packets_dropped);
+            model->display_parser->display_buffer->packets_received,
+            model->display_parser->display_buffer->packets_dropped);
         canvas_draw_str_aligned(canvas, 0, 0, AlignLeft, AlignTop, stats);
 
     } else {
@@ -66,8 +74,6 @@ static void remote_view_draw_callback(Canvas* canvas, void* model) {
         canvas_draw_str_aligned(
             canvas, 64, 60, AlignCenter, AlignTop, "Pin 13/14 (TX/RX)");
     }
-
-    furi_mutex_release(app->mutex);
 }
 
 // Remote view input callback
@@ -165,22 +171,33 @@ static BruceRemoteApp* bruce_remote_app_alloc() {
         BruceRemoteViewSubmenu,
         submenu_get_view(app->submenu));
 
-    // Remote view
-    app->remote_view = view_alloc();
-    view_set_context(app->remote_view, app);
-    view_set_draw_callback(app->remote_view, remote_view_draw_callback);
-    view_set_input_callback(app->remote_view, remote_view_input_callback);
-
-    view_dispatcher_add_view(
-        app->view_dispatcher,
-        BruceRemoteViewRemote,
-        app->remote_view);
-
     // Notifications
     app->notifications = furi_record_open(RECORD_NOTIFICATION);
 
     // Display parser
     app->display_parser = display_parser_alloc();
+
+    // Remote view
+    app->remote_view = view_alloc();
+    view_allocate_model(app->remote_view, ViewModelTypeLocking, sizeof(BruceRemoteViewModel));
+    view_set_context(app->remote_view, app);
+    view_set_draw_callback(app->remote_view, remote_view_draw_callback);
+    view_set_input_callback(app->remote_view, remote_view_input_callback);
+
+    // Initialize view model
+    with_view_model(
+        app->remote_view,
+        BruceRemoteViewModel * model,
+        {
+            model->display_parser = app->display_parser;
+            model->connected = false;
+        },
+        false);
+
+    view_dispatcher_add_view(
+        app->view_dispatcher,
+        BruceRemoteViewRemote,
+        app->remote_view);
 
     // UART worker
     app->uart_worker = uart_worker_alloc(uart_rx_callback, app);
@@ -239,6 +256,14 @@ int32_t bruce_remote_app(void* p) {
 
     // Start UART worker
     uart_worker_start(app->uart_worker);
+
+    // Update connection status in view model
+    with_view_model(
+        app->remote_view,
+        BruceRemoteViewModel * model,
+        { model->connected = true; },
+        false);
+
     app->connected = true;
 
     FURI_LOG_I(TAG, "UART started at 115200 baud");
