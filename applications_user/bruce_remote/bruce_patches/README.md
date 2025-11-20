@@ -1,5 +1,82 @@
 # Bruce Firmware Patches for Flipper Zero Remote Control
 
+## ⚠️ **CRITICAL: THIS PATCH IS NOT FUNCTIONAL AS-IS** ⚠️
+
+**Current Status**: This patch requires modifications to work with Bruce firmware.
+
+### 🚨 Known Issues:
+
+1. **`tft.startAsyncSerial()` function does NOT exist in Bruce firmware**
+   - Bruce provides `tft.setLogging()` and `tft.getBinLog()` but does NOT automatically send data via Serial
+   - You must implement a periodic task to call `getBinLog()` and transmit via `Serial.write()`
+
+2. **ESP32-C5 board is NOT supported by Bruce firmware**
+   - Bruce supports 35+ boards but ESP32-C5 is not among them
+   - ESP32-C5 is a 2025 release and Arduino support is still in development
+   - **Alternative**: Use ESP32-S3-DevKitC-1 or CYD (Cheap Yellow Display) instead
+
+3. **GPIO pin definitions may be incorrect**
+   - The pins GPIO 4/5 (BAD_RX/BAD_TX) are not verified for ESP32-C5
+   - Standard ESP32-C5 UART0 uses GPIO 11 (TX) and GPIO 12 (RX)
+
+### ✅ What IS Correct:
+
+- The binary protocol definition (tft_logger format) is 100% accurate
+- The button command protocol (U/D/S/E/L/R) is correct
+- The Flipper Zero app (parser, UART worker) is fully functional
+- The concept and architecture are sound
+
+### 🔧 To Make This Work:
+
+**Option A**: Implement missing function in Bruce (recommended)
+```cpp
+// Add to Bruce firmware: src/core/tftLogger/tftLogger.cpp
+void tft_logger::startAsyncSerial() {
+    setLogging(true);
+
+    // Create FreeRTOS task to periodically send logs
+    xTaskCreate([](void* param) {
+        tft_logger* tft = (tft_logger*)param;
+        uint8_t buffer[512];
+        size_t size;
+
+        while(true) {
+            tft->getBinLog(buffer, size);
+            if(size > 0) {
+                Serial.write(buffer, size);
+            }
+            vTaskDelay(pdMS_TO_TICKS(50));  // 20 FPS
+        }
+    }, "tftSerial", 4096, this, 1, NULL);
+}
+```
+
+**Option B**: Use a supported Bruce board (easier)
+- Flash to ESP32-S3-DevKitC-1 or CYD-2432S028
+- Modify the corresponding board's `interface.cpp` instead
+
+**Option C**: Add periodic sending in main loop
+```cpp
+// In Bruce main.cpp loop()
+static uint32_t lastUpdate = 0;
+if(millis() - lastUpdate > 50) {
+    uint8_t logBuffer[512];
+    size_t logSize;
+    tft.getBinLog(logBuffer, logSize);
+    if(logSize > 0) {
+        Serial.write(logBuffer, logSize);
+    }
+    lastUpdate = millis();
+}
+```
+
+### 📚 References:
+
+- Bruce firmware: https://github.com/pr3y/Bruce (official repository)
+- ESP32-C5 datasheet: https://www.espressif.com/sites/default/files/documentation/esp32-c5_datasheet_en.pdf
+
+---
+
 This directory contains modified files for the Bruce ESP32 firmware to enable remote control from Flipper Zero.
 
 ## Files

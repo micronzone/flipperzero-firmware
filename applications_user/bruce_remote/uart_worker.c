@@ -15,6 +15,18 @@ static void uart_on_irq_cb(
     if(event & FuriHalSerialRxEventData) {
         uint8_t byte = furi_hal_serial_async_rx(handle);
         furi_stream_buffer_send(worker->rx_stream, &byte, 1, 0);
+        FURI_LOG_T("BruceUart", "RX: 0x%02X", byte);
+    }
+
+    // Error handling
+    if(event & FuriHalSerialRxEventOverrunError) {
+        FURI_LOG_E("BruceUart", "Overrun Error - data loss!");
+    }
+    if(event & FuriHalSerialRxEventFrameError) {
+        FURI_LOG_E("BruceUart", "Frame Error - baud rate mismatch?");
+    }
+    if(event & FuriHalSerialRxEventNoiseError) {
+        FURI_LOG_W("BruceUart", "Noise Error - check connections");
     }
 }
 
@@ -23,17 +35,22 @@ static int32_t uart_worker_thread(void* context) {
     UartWorker* worker = (UartWorker*)context;
 
     uint8_t data[256];
+    FURI_LOG_I("BruceUart", "Worker thread started");
 
     while(worker->running) {
         // Read from stream buffer
         size_t len =
             furi_stream_buffer_receive(worker->rx_stream, data, sizeof(data), 100);
 
-        if(len > 0 && worker->callback) {
-            worker->callback(data, len, worker->callback_context);
+        if(len > 0) {
+            FURI_LOG_D("BruceUart", "Received %zu bytes from stream", len);
+            if(worker->callback) {
+                worker->callback(data, len, worker->callback_context);
+            }
         }
     }
 
+    FURI_LOG_I("BruceUart", "Worker thread stopped");
     return 0;
 }
 
@@ -53,8 +70,11 @@ UartWorker* uart_worker_alloc(UartWorkerCallback callback, void* context) {
 
     // Init UART
     furi_hal_serial_init(worker->serial_handle, BRUCE_BAUD_RATE);
+    FURI_LOG_I("BruceUart", "UART initialized: %lu baud, Pin 13(TX)/14(RX)", BRUCE_BAUD_RATE);
+
     furi_hal_serial_async_rx_start(
-        worker->serial_handle, uart_on_irq_cb, worker, false);
+        worker->serial_handle, uart_on_irq_cb, worker, true);  // Enable error reporting
+    FURI_LOG_I("BruceUart", "Async RX started with error reporting");
 
     // Create worker thread
     worker->thread = furi_thread_alloc();
@@ -109,10 +129,12 @@ void uart_worker_send_button(UartWorker* worker, char button) {
 
     uint8_t data = (uint8_t)button;
     furi_hal_serial_tx(worker->serial_handle, &data, 1);
+    FURI_LOG_D("BruceUart", "Sent button: '%c' (0x%02X)", button, button);
 }
 
 void uart_worker_send(UartWorker* worker, const uint8_t* data, size_t length) {
     furi_assert(worker);
 
     furi_hal_serial_tx(worker->serial_handle, data, length);
+    FURI_LOG_D("BruceUart", "Sent %zu bytes", length);
 }
