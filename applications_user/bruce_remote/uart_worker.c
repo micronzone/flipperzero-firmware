@@ -12,14 +12,9 @@ static void uart_on_irq_cb(
     void* context) {
     UartWorker* worker = (UartWorker*)context;
 
-    if(event == FuriHalSerialRxEventData) {
-        uint8_t data[64];
-        size_t len = furi_hal_serial_rx(handle, data, sizeof(data));
-
-        if(len > 0) {
-            // Push to stream buffer
-            furi_stream_buffer_send(worker->rx_stream, data, len, 0);
-        }
+    if(event & FuriHalSerialRxEventData) {
+        uint8_t byte = furi_hal_serial_async_rx(handle);
+        furi_stream_buffer_send(worker->rx_stream, &byte, 1, 0);
     }
 }
 

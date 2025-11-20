@@ -55,9 +55,6 @@ static void parse_packet(DisplayParser* parser, const uint8_t* packet, uint8_t s
     cmd.text = NULL;
 
     // Parse parameters based on function
-    size_t param_offset = 3;
-    uint8_t param_count = 0;
-
     switch(func) {
         case TFT_SCREEN_INFO:
             // AA 07 99 WW WW HH HH RR
@@ -224,7 +221,7 @@ void display_parser_parse(DisplayParser* parser, const uint8_t* data, size_t len
                 parser->packet_size = byte;
 
                 // Sanity check
-                if(parser->packet_size > sizeof(parser->buffer)) {
+                if(parser->packet_size > (uint8_t)sizeof(parser->buffer)) {
                     FURI_LOG_W("BruceRemote", "Packet too large: %d", parser->packet_size);
                     parser->in_packet = false;
                     parser->buffer_pos = 0;

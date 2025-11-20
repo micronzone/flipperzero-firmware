@@ -11,8 +11,7 @@
 
 // Forward declarations
 static void bruce_remote_app_free(BruceRemoteApp* app);
-static uint32_t bruce_remote_exit_callback(void* context);
-static void bruce_remote_input_callback(InputEvent* event, void* context);
+static bool bruce_remote_navigation_callback(void* context);
 
 // UART callback
 static void uart_rx_callback(uint8_t* data, size_t len, void* context) {
@@ -23,7 +22,7 @@ static void uart_rx_callback(uint8_t* data, size_t len, void* context) {
 
     // Trigger view update
     if(app->remote_view) {
-        view_port_update(view_get_view_port(app->remote_view));
+        view_commit_model(app->remote_view, false);
     }
 }
 
@@ -157,8 +156,6 @@ static BruceRemoteApp* bruce_remote_app_alloc() {
     // GUI
     app->view_dispatcher = view_dispatcher_alloc();
     view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
-    view_dispatcher_set_custom_event_callback(
-        app->view_dispatcher, bruce_remote_exit_callback);
 
     // Submenu
     app->submenu = submenu_alloc();
@@ -225,10 +222,10 @@ static void bruce_remote_app_free(BruceRemoteApp* app) {
     free(app);
 }
 
-// Exit callback
-static uint32_t bruce_remote_exit_callback(void* context) {
+// Navigation callback
+static bool bruce_remote_navigation_callback(void* context) {
     UNUSED(context);
-    return VIEW_NONE;
+    return true;  // Allow back navigation
 }
 
 // App entry point

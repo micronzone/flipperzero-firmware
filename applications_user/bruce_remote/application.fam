@@ -6,10 +6,13 @@ App(
     requires=["gui"],
     stack_size=4 * 1024,
     order=22,
-    fap_icon="icons/bruce_remote_10px.png",
     fap_category="GPIO",
     fap_description="Control ESP32-C5 Bruce device via UART and display its screen",
     fap_author="Flipper Zero Community",
     fap_version="1.0",
-    fap_icon_assets="icons",
+    sources=[
+        "bruce_remote_app.c",
+        "uart_worker.c",
+        "display_parser.c",
+    ],
 )
