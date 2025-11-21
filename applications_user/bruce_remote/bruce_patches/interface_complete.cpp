@@ -1,18 +1,20 @@
 /**
  * @file interface.cpp
- * @brief Safe minimal interface for ESP32-C5-tft with Flipper Zero remote control
+ * @brief ESP32-C5-tft interface with Flipper Zero remote control
+ *
+ * Based on official Bruce firmware Dev branch:
+ * https://github.com/pr3y/Bruce/tree/dev/boards/ESP32-C5-tft
  *
  * This file is a complete replacement for boards/ESP32-C5-tft/interface.cpp
- * in the Bruce firmware repository.
  *
- * Modifications from original:
- * 1. Serial UART initialized at 115200 baud for Flipper Zero communication
- * 2. TFT logging enabled (manual polling required for display streaming)
- * 3. UART button input handler for remote control from Flipper Zero
+ * Modifications for Flipper Zero:
+ * 1. Serial UART initialized at 115200 baud in _setup_gpio()
+ * 2. TFT logging enabled in _post_setup_gpio()
+ * 3. UART button input handler added to InputHandler()
  *
- * UART Pins (ESP32-C5):
- * - GPIO11: UART0 TX (to Flipper Pin 14 RX)
- * - GPIO12: UART0 RX (from Flipper Pin 13 TX)
+ * UART Pins (ESP32-C5 UART0):
+ * - GPIO11: TX (to Flipper Pin 14 RX)
+ * - GPIO12: RX (from Flipper Pin 13 TX)
  *
  * Installation:
  * 1. Copy this file to Bruce/boards/ESP32-C5-tft/interface.cpp
@@ -22,28 +24,56 @@
  * @date 2025-11-21
  */
 
-// Include paths - verified correct for Bruce firmware structure
-#include "../../include/globals.h"
-#include "../../src/core/display.h"
-#include "../../src/core/mykeyboard.h"
+#include "core/powerSave.h"
+#include "core/utils.h"
+#include <interface.h>
 
 /***************************************************************************************
 ** Function name: _setup_gpio()
-** Location: main.cpp (called from setup())
-** Description: Initial GPIO setup - TFT is NOT initialized yet at this point!
+** Location: main.cpp
+** Description:   initial setup for the device
 ***************************************************************************************/
 void _setup_gpio() {
-    // ESP32-C5 GPIO initialization
-    // NOTE: Do NOT use tft object here - it's not initialized yet!
 
-    // Initialize Serial for Flipper Zero communication
-    // Default UART0: GPIO11 (TX), GPIO12 (RX)
+    pinMode(TFT_CS, OUTPUT);
+    digitalWrite(TFT_CS, HIGH);
+    pinMode(TFT_MOSI, OUTPUT);
+    digitalWrite(TFT_MOSI, HIGH);
+    pinMode(TFT_SCLK, OUTPUT);
+
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, HIGH);
+    pinMode(TFT_RST, OUTPUT);
+    pinMode(TFT_DC, OUTPUT);
+    digitalWrite(TFT_DC, HIGH);
+
+#ifdef HAS_3_BUTTONS
+    pinMode(UP_BTN, INPUT_PULLUP);
+    pinMode(SEL_BTN, INPUT_PULLUP);
+    pinMode(DW_BTN, INPUT_PULLUP);
+#endif
+    pinMode(NRF24_SS_PIN, OUTPUT);
+    pinMode(CC1101_SS_PIN, OUTPUT);
+    pinMode(SDCARD_CS, OUTPUT);
+    pinMode(W5500_SS_PIN, OUTPUT);
+    pinMode(TFT_CS, OUTPUT);
+
+    digitalWrite(NRF24_SS_PIN, HIGH);
+    digitalWrite(CC1101_SS_PIN, HIGH);
+    digitalWrite(SDCARD_CS, HIGH);
+    digitalWrite(W5500_SS_PIN, HIGH);
+    digitalWrite(TFT_CS, HIGH);
+
+#ifdef ILI9341_DRIVER
+    bruceConfig.colorInverted = 0;
+#endif
+
+    // ★ FLIPPER ZERO MODIFICATION: Initialize Serial for remote control
     Serial.begin(115200);
     delay(100);
-
     Serial.println();
     Serial.println("================================");
-    Serial.println("  Bruce ESP32-C5");
+    Serial.println("  Bruce ESP32-C5-tft");
     Serial.println("  Flipper Zero Remote Mode");
     Serial.println("================================");
     Serial.println("UART: GPIO11(TX) GPIO12(RX)");
@@ -53,18 +83,43 @@ void _setup_gpio() {
 
 /***************************************************************************************
 ** Function name: _post_setup_gpio()
-** Location: main.cpp (called after tft.init() and storage init)
-** Description: Post-initialization - TFT is ready here
+** Location: main.cpp
+** Description:   second stage gpio setup to make a few functions work
 ***************************************************************************************/
 void _post_setup_gpio() {
-    // At this point, tft has been initialized and is safe to use
+#ifdef HAS_TOUCH
+    pinMode(TOUCH_CS, OUTPUT);
+    uint16_t calData[5];
+    File caldata = LittleFS.open("/calData", "r");
 
+    if (!caldata) {
+        tft.setRotation(ROTATION);
+        tft.calibrateTouch(calData, TFT_WHITE, TFT_BLACK, 10);
+
+        caldata = LittleFS.open("/calData", "w");
+        if (caldata) {
+            caldata.printf(
+                "%d\n%d\n%d\n%d\n%d\n", calData[0], calData[1], calData[2], calData[3], calData[4]
+            );
+            caldata.close();
+        }
+    } else {
+        Serial.print("\ntft Calibration data: ");
+        for (int i = 0; i < 5; i++) {
+            String line = caldata.readStringUntil('\n');
+            calData[i] = line.toInt();
+            Serial.printf("%d, ", calData[i]);
+        }
+        Serial.println();
+        caldata.close();
+    }
+    tft.setTouch(calData);
+#endif
+
+    // ★ FLIPPER ZERO MODIFICATION: Enable TFT logging
     Serial.println("[Bruce] Post-setup initialization");
-
-    // Enable TFT command logging
     tft.setLogging(true);
     Serial.println("[tftLogger] Logging enabled");
-
     Serial.println();
     Serial.println("Ready for Flipper Zero remote control:");
     Serial.println("  Commands: U(up) D(down) S(select) E(esc)");
@@ -72,29 +127,46 @@ void _post_setup_gpio() {
 }
 
 /***************************************************************************************
-** Function name: InputHandler
-** Location: Called continuously from main loop
-** Description: Handle UART input from Flipper Zero and set global button variables
-**
-** Global variables set by this function:
-** - PrevPress: true when Up pressed
-** - NextPress: true when Down pressed
-** - SelPress: true when Select pressed
-** - EscPress: true when Escape pressed
-** - AnyKeyPress: true when any key pressed
-** - LongPress: true for long press (if applicable)
+** Function name: getBattery()
+** location: display.cpp
+** Description:   Delivers the battery value from 1-100
 ***************************************************************************************/
+int getBattery() { return 0; }
+
+/***************************************************************************************
+** Function name: isCharging()
+** Description:   Default implementation that returns false
+***************************************************************************************/
+bool isCharging() { return false; }
+
+/*********************************************************************
+** Function: setBrightness
+** location: settings.cpp
+** set brightness value
+**********************************************************************/
+void _setBrightness(uint8_t brightval) {
+    if (brightval == 0) {
+        analogWrite(TFT_BL, brightval);
+    } else {
+        int bl = MINBRIGHT + round(((255 - MINBRIGHT) * brightval / 100));
+        analogWrite(TFT_BL, bl);
+    }
+}
+
+/*********************************************************************
+** Function: InputHandler
+** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
+**********************************************************************/
 void InputHandler(void) {
-    // Standard debounce pattern (200ms)
     static unsigned long tm = 0;
     if (millis() - tm < 200 && !LongPress) return;
 
-    // Check UART input from Flipper Zero
+    // ★ FLIPPER ZERO MODIFICATION: Check UART input first
     while (Serial.available()) {
         char c = Serial.read();
         tm = millis();
 
-        // Process button commands
+        // Process button commands from Flipper Zero
         switch(c) {
             case 'U':  // Up
                 if (!wakeUpScreen()) {
@@ -143,69 +215,83 @@ void InputHandler(void) {
                 break;
         }
     }
+
+    // Original Bruce code: Touch and physical buttons
+#ifdef HAS_TOUCH
+    TouchPoint t;
+    checkPowerSaveTime();
+    bool _IH_touched = tft.getTouch(&t.x, &t.y);
+    if (_IH_touched) {
+        NextPress = false;
+        PrevPress = false;
+        UpPress = false;
+        DownPress = false;
+        SelPress = false;
+        EscPress = false;
+        AnyKeyPress = false;
+        NextPagePress = false;
+        PrevPagePress = false;
+        touchPoint.pressed = false;
+        _IH_touched = false;
+        Serial.printf("\nRAW: Touch Pressed on x=%d, y=%d", t.x, t.y);
+        if (bruceConfig.rotation == 3) {
+            t.y = (tftHeight + 20) - t.y;
+            t.x = tftWidth - t.x;
+        }
+        if (bruceConfig.rotation == 0) {
+            uint16_t tmp = t.x;
+            t.x = map((tftHeight + 20) - t.y, 0, 320, 0, 240);
+            t.y = map(tmp, 0, 240, 0, 320);
+        }
+        if (bruceConfig.rotation == 2) {
+            uint16_t tmp = t.x;
+            t.x = map(t.y, 0, 320, 0, 240);
+            t.y = map(tftWidth - tmp, 0, 240, 0, 320);
+        }
+
+        Serial.printf("\nROT: Touch Pressed on x=%d, y=%d, rot=%d\n", t.x, t.y, bruceConfig.rotation);
+
+        if (!wakeUpScreen()) AnyKeyPress = true;
+        else return;
+
+        // Touch point global variable
+        touchPoint.x = t.x;
+        touchPoint.y = t.y;
+        touchPoint.pressed = true;
+        touchHeatMap(touchPoint);
+        tm = millis();
+    }
+
+#endif
+#ifdef HAS_3_BUTTONS
+    bool upPressed = (digitalRead(UP_BTN) == LOW);
+    bool selPressed = (digitalRead(SEL_BTN) == LOW);
+    bool dwPressed = (digitalRead(DW_BTN) == LOW);
+
+    bool anyPressed = upPressed || selPressed || dwPressed;
+    if (anyPressed) tm = millis();
+    if (anyPressed && wakeUpScreen()) return;
+
+    AnyKeyPress = anyPressed;
+    PrevPress = upPressed;
+    EscPress = upPressed && dwPressed;
+    NextPress = dwPressed;
+    SelPress = selPressed;
+#endif
 }
 
-/***************************************************************************************
-** Function name: getBattery
-** Location: display.cpp
-** Description: Returns battery level 0-100
-***************************************************************************************/
-int getBattery() {
-    // ESP32-C5-DevKitC-1 doesn't have built-in battery monitoring
-    // Return 100 to indicate USB powered
-    return 100;
-}
+/*********************************************************************
+** Function: powerOff
+** location: mykeyboard.cpp
+** Turns off the device (or try to)
+**********************************************************************/
+void powerOff() {}
 
-/***************************************************************************************
-** Function name: _setBrightness
-** Location: settings.cpp
-** Description: Set display brightness 0-100
-***************************************************************************************/
-void _setBrightness(uint8_t brightval) {
-    // ESP32-C5-tft may have backlight control
-    // Implement if your board has TFT_BL pin
-    // Example:
-    // int brightness = MINBRIGHT + ((255 - MINBRIGHT) * brightval / 100);
-    // analogWrite(TFT_BL, brightness);
-
-    // For now, do nothing (board-specific implementation needed)
-}
-
-/***************************************************************************************
-** Function name: powerOff
-** Location: mykeyboard.cpp
-** Description: Power off the device
-***************************************************************************************/
-void powerOff() {
-    Serial.println("[Bruce] Power off requested");
-
-    // ESP32-C5 doesn't have hardware power control
-    // Best we can do is deep sleep
-
-    tft.fillScreen(TFT_BLACK);
-    Serial.println("[Bruce] Entering deep sleep...");
-    delay(1000);
-
-    esp_deep_sleep_start();
-}
-
-/***************************************************************************************
-** Function name: checkReboot
-** Location: mykeyboard.cpp
-** Description: Check if reboot is needed (button logic)
-***************************************************************************************/
-void checkReboot() {
-    // No special reboot logic needed for ESP32-C5
-    // This function can be empty
-}
-
-/***************************************************************************************
-** Function name: isCharging
-** Description: Returns true if device is charging
-***************************************************************************************/
-bool isCharging() {
-    // ESP32-C5-DevKitC-1 is USB powered, always "charging"
-    return true;
-}
+/*********************************************************************
+** Function: checkReboot
+** location: mykeyboard.cpp
+** Btn logic to turnoff the device (name is odd btw)
+**********************************************************************/
+void checkReboot() {}
 
 // End of interface.cpp
