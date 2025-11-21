@@ -70,7 +70,7 @@ UartWorker* uart_worker_alloc(UartWorkerCallback callback, void* context) {
 
     // Init UART
     furi_hal_serial_init(worker->serial_handle, BRUCE_BAUD_RATE);
-    FURI_LOG_I("BruceUart", "UART initialized: %lu baud, Pin 13(TX)/14(RX)", BRUCE_BAUD_RATE);
+    FURI_LOG_I("BruceUart", "UART initialized: %u baud, Pin 13(TX)/14(RX)", BRUCE_BAUD_RATE);
 
     furi_hal_serial_async_rx_start(
         worker->serial_handle, uart_on_irq_cb, worker, true);  // Enable error reporting
