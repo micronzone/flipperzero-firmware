@@ -23,9 +23,9 @@
  */
 
 // Include paths relative to boards/ESP32-C5-tft/
-#include "../../src/core/globals.h"
-#include "../../src/core/mykeyboard.h"
-#include "../../src/core/display.h"
+#include "../../include/globals.h"
+#include "../../include/mykeyboard.h"
+#include "../../include/display.h"
 
 // Pin definitions for ESP32-C5-tft
 #define TFT_CS    10
